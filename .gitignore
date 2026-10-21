@@ -1,0 +1,30 @@
+# Binaries
+git-xcommit
+git-xcommit.exe
+gitx-commit
+
+# GoReleaser
+dist/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Test artifacts
+coverage.out
+coverage.html
+
+# Environment
+.env
+.envrc
+
+# Docs
+idea.md
+RESEARCH.md
