@@ -361,6 +361,7 @@ func migrate(db *sql.DB, dbPath string) error {
 
 	// All migrations in order. Each is a SQL string.
 	// RULE: never edit existing migrations — only append new ones.
+	// RULE: update schemaVersion constant when adding a migration.
 	migrations := []string{
 		// Migration 1: initial schema
 		`CREATE TABLE IF NOT EXISTS commits (
@@ -382,6 +383,11 @@ func migrate(db *sql.DB, dbPath string) error {
 		CREATE INDEX IF NOT EXISTS idx_commits_repo ON commits(repo_name);
 		CREATE INDEX IF NOT EXISTS idx_commits_date ON commits(committed_at);
 		CREATE INDEX IF NOT EXISTS idx_commits_tool ON commits(ai_tool);`,
+	}
+
+	// Safety check: schemaVersion constant must match migrations count
+	if len(migrations) != schemaVersion {
+		return fmt.Errorf("bug: schemaVersion is %d but there are %d migrations", schemaVersion, len(migrations))
 	}
 
 	// Run pending migrations
