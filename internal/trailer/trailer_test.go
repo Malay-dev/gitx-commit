@@ -193,7 +193,7 @@ func TestLooksLikeTrailer(t *testing.T) {
 		{"No colon here", false},
 		{"", false},
 		{" : empty key", false},
-		{"Has Space: value", false}, // space in key
+		{"Has Space: value", false},   // space in key
 		{"123-numeric: value", false}, // starts with number
 	}
 

@@ -57,6 +57,12 @@ func Install(repoPath string) error {
 // other tools are left untouched.
 func Remove(repoPath string) error {
 	hooksDir := filepath.Join(repoPath, ".git", "hooks")
+	return RemoveFromDir(hooksDir)
+}
+
+// RemoveFromDir removes gitx-commit hooks from any directory.
+// Used by both per-repo Remove() and global disable.
+func RemoveFromDir(hooksDir string) error {
 
 	hookNames := []string{"prepare-commit-msg", "post-commit"}
 
@@ -71,6 +77,41 @@ func Remove(repoPath string) error {
 		}
 		if err := os.Remove(hookPath); err != nil {
 			return fmt.Errorf("failed to remove %s hook: %w", name, err)
+		}
+	}
+	return nil
+}
+
+// GlobalHooksDir returns ~/.gitx/hooks/, creating it if needed.
+func GlobalHooksDir() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	dir := filepath.Join(home, ".gitx", "hooks")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return "", err
+	}
+	return dir, nil
+}
+
+// InstallGlobal writes hook scripts to a global hooks directory.
+// Unlike Install, this doesn't need a .git/ path — it writes directly.
+func InstallGlobal(hooksDir string) error {
+	hooks := map[string]string{
+		"prepare-commit-msg": prepareCommitMsgScript,
+		"post-commit":        postCommitScript,
+	}
+
+	for name, script := range hooks {
+		hookPath := filepath.Join(hooksDir, name)
+		if existing, err := os.ReadFile(hookPath); err == nil {
+			if !strings.Contains(string(existing), hookMarker) {
+				return fmt.Errorf("existing hook found at %s — use --force to overwrite", hookPath)
+			}
+		}
+		if err := os.WriteFile(hookPath, []byte(script), 0755); err != nil {
+			return fmt.Errorf("failed to write %s hook: %w", name, err)
 		}
 	}
 	return nil

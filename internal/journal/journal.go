@@ -19,7 +19,7 @@ import (
 )
 
 // Current schema version. Bump this when adding migrations.
-const schemaVersion = 1
+const schemaVersion = 2
 
 // CommitRecord is a single commit entry in the journal.
 type CommitRecord struct {
@@ -36,6 +36,7 @@ type CommitRecord struct {
 	AITool       string
 	AIModel      string
 	Confidence   float64
+	CommitMode   string
 	CommittedAt  time.Time
 }
 
@@ -135,8 +136,8 @@ func (j *Journal) LogCommit(record CommitRecord) error {
 		INSERT OR IGNORE INTO commits (
 			sha, repo, repo_name, branch, message,
 			author, email, files_changed, additions, deletions,
-			ai_tool, ai_model, confidence, committed_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			ai_tool, ai_model, confidence, commit_mode, committed_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		record.SHA,
 		record.Repo,
 		record.RepoName,
@@ -150,6 +151,7 @@ func (j *Journal) LogCommit(record CommitRecord) error {
 		record.AITool,
 		record.AIModel,
 		record.Confidence,
+		record.CommitMode,
 		record.CommittedAt.UTC().Format(time.RFC3339),
 	)
 	if err != nil {
@@ -177,14 +179,13 @@ func (j *Journal) Count() (int, error) {
 	return count, err
 }
 
-// CountByMode returns the number of commits grouped by AI tool.
-// Empty ai_tool means manual commit.
+// CountByMode returns the number of commits grouped by commit mode.
 func (j *Journal) CountByMode() (manual, assisted int, err error) {
-	err = j.db.QueryRow("SELECT COUNT(*) FROM commits WHERE ai_tool = ''").Scan(&manual)
+	err = j.db.QueryRow("SELECT COUNT(*) FROM commits WHERE commit_mode = 'Manual' OR (commit_mode = '' AND ai_tool = '')").Scan(&manual)
 	if err != nil {
 		return
 	}
-	err = j.db.QueryRow("SELECT COUNT(*) FROM commits WHERE ai_tool != ''").Scan(&assisted)
+	err = j.db.QueryRow("SELECT COUNT(*) FROM commits WHERE commit_mode LIKE '%AI%' OR (commit_mode = '' AND ai_tool != '')").Scan(&assisted)
 	return
 }
 
@@ -245,20 +246,20 @@ func (j *Journal) CountRepos() (int, error) {
 
 // GetDateRange returns the earliest and latest commit dates.
 func (j *Journal) GetDateRange() (*DateRange, error) {
-	var earliest, latest string
+	var earliest, latest sql.NullString
 	err := j.db.QueryRow(`
 		SELECT MIN(committed_at), MAX(committed_at)
 		FROM commits`).Scan(&earliest, &latest)
 	if err != nil {
 		return nil, err
 	}
-	if earliest == "" {
+	if !earliest.Valid || earliest.String == "" {
 		return nil, nil // no commits
 	}
 
 	dr := &DateRange{}
-	dr.Earliest, _ = time.Parse(time.RFC3339, earliest)
-	dr.Latest, _ = time.Parse(time.RFC3339, latest)
+	dr.Earliest, _ = time.Parse(time.RFC3339, earliest.String)
+	dr.Latest, _ = time.Parse(time.RFC3339, latest.String)
 	return dr, nil
 }
 
@@ -267,7 +268,7 @@ func (j *Journal) RecentCommits(limit int) ([]CommitRecord, error) {
 	rows, err := j.db.Query(`
 		SELECT sha, repo, repo_name, branch, message,
 			   author, email, files_changed, additions, deletions,
-			   ai_tool, ai_model, confidence, committed_at
+			   ai_tool, ai_model, confidence, commit_mode, committed_at
 		FROM commits
 		ORDER BY committed_at DESC
 		LIMIT ?`, limit)
@@ -284,7 +285,7 @@ func (j *Journal) CommitsByRepo(repoName string, limit int) ([]CommitRecord, err
 	rows, err := j.db.Query(`
 		SELECT sha, repo, repo_name, branch, message,
 			   author, email, files_changed, additions, deletions,
-			   ai_tool, ai_model, confidence, committed_at
+			   ai_tool, ai_model, confidence, commit_mode, committed_at
 		FROM commits
 		WHERE repo_name = ?
 		ORDER BY committed_at DESC
@@ -302,11 +303,78 @@ func (j *Journal) AllCommits() ([]CommitRecord, error) {
 	rows, err := j.db.Query(`
 		SELECT sha, repo, repo_name, branch, message,
 			   author, email, files_changed, additions, deletions,
-			   ai_tool, ai_model, confidence, committed_at
+			   ai_tool, ai_model, confidence, commit_mode, committed_at
 		FROM commits
 		ORDER BY committed_at DESC`)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query all commits: %w", err)
+	}
+	defer rows.Close()
+
+	return scanCommits(rows)
+}
+
+// QueryFilter holds filter options for journal queries.
+type QueryFilter struct {
+	Repo   string
+	Mode   string // "manual", "ai-assisted", "ai-generated"
+	Tool   string
+	Model  string
+	Search string // full-text search in commit messages
+	Since  string // RFC3339 or date string
+	Until  string // RFC3339 or date string
+	Limit  int
+}
+
+// QueryFiltered returns commits matching all provided filters.
+func (j *Journal) QueryFiltered(f QueryFilter) ([]CommitRecord, error) {
+	query := `
+		SELECT sha, repo, repo_name, branch, message,
+			   author, email, files_changed, additions, deletions,
+			   ai_tool, ai_model, confidence, commit_mode, committed_at
+		FROM commits WHERE 1=1`
+
+	var args []interface{}
+
+	if f.Repo != "" {
+		query += " AND repo_name = ?"
+		args = append(args, f.Repo)
+	}
+	if f.Mode != "" {
+		query += " AND LOWER(commit_mode) = LOWER(?)"
+		args = append(args, f.Mode)
+	}
+	if f.Tool != "" {
+		query += " AND LOWER(ai_tool) = LOWER(?)"
+		args = append(args, f.Tool)
+	}
+	if f.Model != "" {
+		query += " AND LOWER(ai_model) = LOWER(?)"
+		args = append(args, f.Model)
+	}
+	if f.Search != "" {
+		query += " AND message LIKE ?"
+		args = append(args, "%"+f.Search+"%")
+	}
+	if f.Since != "" {
+		query += " AND committed_at >= ?"
+		args = append(args, f.Since)
+	}
+	if f.Until != "" {
+		query += " AND committed_at <= ?"
+		args = append(args, f.Until)
+	}
+
+	query += " ORDER BY committed_at DESC"
+
+	if f.Limit > 0 {
+		query += " LIMIT ?"
+		args = append(args, f.Limit)
+	}
+
+	rows, err := j.db.Query(query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query commits: %w", err)
 	}
 	defer rows.Close()
 
@@ -324,7 +392,7 @@ func scanCommits(rows *sql.Rows) ([]CommitRecord, error) {
 		err := rows.Scan(
 			&r.SHA, &r.Repo, &r.RepoName, &r.Branch, &r.Message,
 			&r.Author, &r.Email, &r.FilesChanged, &r.Additions, &r.Deletions,
-			&r.AITool, &r.AIModel, &r.Confidence, &committedAt,
+			&r.AITool, &r.AIModel, &r.Confidence, &r.CommitMode, &committedAt,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan commit row: %w", err)
@@ -383,6 +451,10 @@ func migrate(db *sql.DB, dbPath string) error {
 		CREATE INDEX IF NOT EXISTS idx_commits_repo ON commits(repo_name);
 		CREATE INDEX IF NOT EXISTS idx_commits_date ON commits(committed_at);
 		CREATE INDEX IF NOT EXISTS idx_commits_tool ON commits(ai_tool);`,
+
+		// Migration 2: add commit_mode column for Manual/AI Assisted/AI Generated tracking
+		`ALTER TABLE commits ADD COLUMN commit_mode TEXT NOT NULL DEFAULT '';
+		CREATE INDEX IF NOT EXISTS idx_commits_mode ON commits(commit_mode);`,
 	}
 
 	// Safety check: schemaVersion constant must match migrations count

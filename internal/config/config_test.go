@@ -1,6 +1,10 @@
 package config
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
 
 func TestDefaultConfig(t *testing.T) {
 	cfg := DefaultConfig()
@@ -9,42 +13,27 @@ func TestDefaultConfig(t *testing.T) {
 		t.Fatal("DefaultConfig() returned nil")
 	}
 
-	// General
 	if !cfg.General.Enabled {
 		t.Error("General.Enabled should default to true")
 	}
-
-	// Template
 	if cfg.Template.Format != "conventional" {
 		t.Errorf("Template.Format should be 'conventional', got '%s'", cfg.Template.Format)
 	}
-	if cfg.Template.CustomTemplate != "" {
-		t.Errorf("Template.CustomTemplate should be empty, got '%s'", cfg.Template.CustomTemplate)
-	}
-
-	// Trailer (nested inside Template)
 	if cfg.Template.Trailer.Format != "Assisted-by" {
 		t.Errorf("Trailer.Format should be 'Assisted-by', got '%s'", cfg.Template.Trailer.Format)
 	}
 	if !cfg.Template.Trailer.IncludeModel {
 		t.Error("Trailer.IncludeModel should default to true")
 	}
-
-	// AI Detection
 	if !cfg.AI.Enabled {
 		t.Error("AI.Enabled should default to true")
 	}
 	if cfg.AI.Mode != "auto" {
 		t.Errorf("AI.Mode should be 'auto', got '%s'", cfg.AI.Mode)
 	}
-	if cfg.AI.OverrideTool != "" {
-		t.Errorf("AI.OverrideTool should be empty, got '%s'", cfg.AI.OverrideTool)
-	}
 	if cfg.AI.ConfidenceThreshold != 0.7 {
 		t.Errorf("AI.ConfidenceThreshold should be 0.7, got %f", cfg.AI.ConfidenceThreshold)
 	}
-
-	// Journal
 	if !cfg.Journal.Enabled {
 		t.Error("Journal.Enabled should default to true")
 	}
@@ -54,8 +43,6 @@ func TestDefaultConfig(t *testing.T) {
 }
 
 func TestDefaultConfigReturnsNewInstance(t *testing.T) {
-	// Each call should return a fresh instance, not a shared pointer.
-	// Modifying one should not affect the other.
 	cfg1 := DefaultConfig()
 	cfg2 := DefaultConfig()
 
@@ -63,7 +50,7 @@ func TestDefaultConfigReturnsNewInstance(t *testing.T) {
 	cfg1.Template.Format = "angular"
 
 	if !cfg2.General.Enabled {
-		t.Error("modifying cfg1 should not affect cfg2 — they should be independent instances")
+		t.Error("modifying cfg1 should not affect cfg2")
 	}
 	if cfg2.Template.Format != "conventional" {
 		t.Error("modifying cfg1 should not affect cfg2")
@@ -71,12 +58,9 @@ func TestDefaultConfigReturnsNewInstance(t *testing.T) {
 }
 
 func TestDefaultConfigZeroValueSafety(t *testing.T) {
-	// Verify no field accidentally relies on Go zero values
-	// (empty string, false, 0.0) when it shouldn't.
 	cfg := DefaultConfig()
 
-	// These should NOT be zero values
-	checks := []struct {
+	boolChecks := []struct {
 		name string
 		ok   bool
 	}{
@@ -85,14 +69,12 @@ func TestDefaultConfigZeroValueSafety(t *testing.T) {
 		{"Journal.Enabled", cfg.Journal.Enabled},
 		{"Trailer.IncludeModel", cfg.Template.Trailer.IncludeModel},
 	}
-
-	for _, c := range checks {
+	for _, c := range boolChecks {
 		if !c.ok {
-			t.Errorf("%s is false — likely a missing default (Go zero value leak)", c.name)
+			t.Errorf("%s is false — likely a missing default", c.name)
 		}
 	}
 
-	// These strings should not be empty
 	stringChecks := []struct {
 		name  string
 		value string
@@ -102,15 +84,147 @@ func TestDefaultConfigZeroValueSafety(t *testing.T) {
 		{"AI.Mode", cfg.AI.Mode},
 		{"Journal.DBPath", cfg.Journal.DBPath},
 	}
-
 	for _, c := range stringChecks {
 		if c.value == "" {
 			t.Errorf("%s is empty — likely a missing default", c.name)
 		}
 	}
 
-	// Confidence threshold should be non-zero
 	if cfg.AI.ConfidenceThreshold == 0.0 {
 		t.Error("AI.ConfidenceThreshold is 0.0 — likely a missing default")
+	}
+}
+
+func TestLoadReturnsDefaultsWhenNoConfigFile(t *testing.T) {
+	// Load from a dir with no config files
+	origDir, _ := os.Getwd()
+	os.Chdir(t.TempDir())
+	defer os.Chdir(origDir)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+	if cfg.Template.Format != "conventional" {
+		t.Errorf("should fall back to defaults, got format '%s'", cfg.Template.Format)
+	}
+}
+
+func TestSaveAndLoad(t *testing.T) {
+	// Use a temp dir as home
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+
+	cfg := DefaultConfig()
+	cfg.Template.Format = "angular"
+	cfg.AI.ConfidenceThreshold = 0.5
+
+	// Save
+	err := Save(cfg)
+	if err != nil {
+		t.Fatalf("Save() failed: %v", err)
+	}
+
+	// Verify file exists
+	path := filepath.Join(tmpHome, ".gitx", "commit-config.toml")
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("config file not created: %v", err)
+	}
+
+	// Load it back
+	loaded, err := Load()
+	if err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	if loaded.Template.Format != "angular" {
+		t.Errorf("expected format 'angular', got '%s'", loaded.Template.Format)
+	}
+	if loaded.AI.ConfidenceThreshold != 0.5 {
+		t.Errorf("expected threshold 0.5, got %f", loaded.AI.ConfidenceThreshold)
+	}
+}
+
+func TestConfigDir(t *testing.T) {
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+
+	dir, err := ConfigDir()
+	if err != nil {
+		t.Fatalf("ConfigDir() failed: %v", err)
+	}
+
+	expected := filepath.Join(tmpHome, ".gitx")
+	if dir != expected {
+		t.Errorf("expected '%s', got '%s'", expected, dir)
+	}
+
+	// Should have created the directory
+	if _, err := os.Stat(dir); err != nil {
+		t.Error("ConfigDir should create the directory")
+	}
+}
+
+func TestGlobalConfigPath(t *testing.T) {
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+
+	path, err := GlobalConfigPath()
+	if err != nil {
+		t.Fatalf("GlobalConfigPath() failed: %v", err)
+	}
+
+	expected := filepath.Join(tmpHome, ".gitx", "commit-config.toml")
+	if path != expected {
+		t.Errorf("expected '%s', got '%s'", expected, path)
+	}
+}
+
+func TestRepoConfigPath(t *testing.T) {
+	path := RepoConfigPath()
+	if path != ".gitx-commit.toml" {
+		t.Errorf("expected '.gitx-commit.toml', got '%s'", path)
+	}
+}
+
+func TestJournalDBPathDefault(t *testing.T) {
+	cfg := DefaultConfig()
+	path := JournalDBPath(cfg)
+	if path != "~/.gitx/commits.db" {
+		t.Errorf("expected default path, got '%s'", path)
+	}
+}
+
+func TestJournalDBPathOverride(t *testing.T) {
+	t.Setenv("GITX_JOURNAL_PATH", "/tmp/test.db")
+	cfg := DefaultConfig()
+	path := JournalDBPath(cfg)
+	if path != "/tmp/test.db" {
+		t.Errorf("expected override path, got '%s'", path)
+	}
+}
+
+func TestLoadRepoOverridesGlobal(t *testing.T) {
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+
+	// Save global config with angular
+	cfg := DefaultConfig()
+	cfg.Template.Format = "angular"
+	Save(cfg)
+
+	// Create a repo config that overrides to "custom"
+	tmpRepo := t.TempDir()
+	origDir, _ := os.Getwd()
+	os.Chdir(tmpRepo)
+	defer os.Chdir(origDir)
+
+	repoConfig := []byte("[template]\nformat = 'custom'\n")
+	os.WriteFile(".gitx-commit.toml", repoConfig, 0644)
+
+	// Load — repo should override global
+	loaded, _ := Load()
+	if loaded.Template.Format != "custom" {
+		t.Errorf("repo config should override global, got '%s'", loaded.Template.Format)
 	}
 }

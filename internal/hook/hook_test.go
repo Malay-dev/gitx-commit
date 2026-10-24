@@ -427,3 +427,88 @@ func TestInstallWriteFailure(t *testing.T) {
 		t.Errorf("expected 'failed to write' error, got: %v", err)
 	}
 }
+
+// --- Global hooks tests ---
+
+func TestGlobalHooksDir(t *testing.T) {
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+
+	dir, err := GlobalHooksDir()
+	if err != nil {
+		t.Fatalf("GlobalHooksDir() failed: %v", err)
+	}
+
+	expected := filepath.Join(tmpHome, ".gitx", "hooks")
+	if dir != expected {
+		t.Errorf("expected '%s', got '%s'", expected, dir)
+	}
+
+	if _, err := os.Stat(dir); err != nil {
+		t.Error("directory should have been created")
+	}
+}
+
+func TestInstallGlobal(t *testing.T) {
+	hooksDir := filepath.Join(t.TempDir(), "hooks")
+	os.MkdirAll(hooksDir, 0755)
+
+	err := InstallGlobal(hooksDir)
+	if err != nil {
+		t.Fatalf("InstallGlobal() failed: %v", err)
+	}
+
+	// Verify hooks created
+	for _, name := range []string{"prepare-commit-msg", "post-commit"} {
+		content, err := os.ReadFile(filepath.Join(hooksDir, name))
+		if err != nil {
+			t.Fatalf("%s not created: %v", name, err)
+		}
+		if !strings.Contains(string(content), hookMarker) {
+			t.Errorf("%s missing marker", name)
+		}
+	}
+}
+
+func TestInstallGlobalExistingForeignHook(t *testing.T) {
+	hooksDir := filepath.Join(t.TempDir(), "hooks")
+	os.MkdirAll(hooksDir, 0755)
+
+	// Write a foreign hook
+	os.WriteFile(filepath.Join(hooksDir, "prepare-commit-msg"), []byte("#!/bin/sh\n# husky\n"), 0755)
+
+	err := InstallGlobal(hooksDir)
+	if err == nil {
+		t.Fatal("should fail when foreign hook exists")
+	}
+}
+
+func TestInstallGlobalIdempotent(t *testing.T) {
+	hooksDir := filepath.Join(t.TempDir(), "hooks")
+	os.MkdirAll(hooksDir, 0755)
+
+	InstallGlobal(hooksDir)
+	err := InstallGlobal(hooksDir)
+	if err != nil {
+		t.Fatalf("second InstallGlobal should succeed: %v", err)
+	}
+}
+
+func TestRemoveFromDir(t *testing.T) {
+	hooksDir := filepath.Join(t.TempDir(), "hooks")
+	os.MkdirAll(hooksDir, 0755)
+
+	// Install then remove
+	InstallGlobal(hooksDir)
+	err := RemoveFromDir(hooksDir)
+	if err != nil {
+		t.Fatalf("RemoveFromDir() failed: %v", err)
+	}
+
+	// Hooks should be gone
+	for _, name := range []string{"prepare-commit-msg", "post-commit"} {
+		if _, err := os.Stat(filepath.Join(hooksDir, name)); err == nil {
+			t.Errorf("%s should be removed", name)
+		}
+	}
+}
