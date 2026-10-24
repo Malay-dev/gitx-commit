@@ -3,8 +3,19 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
+
+// setTestHome sets the home directory for tests across all platforms.
+// Windows uses USERPROFILE, Unix uses HOME.
+func setTestHome(t *testing.T, dir string) {
+	t.Helper()
+	t.Setenv("HOME", dir)
+	if runtime.GOOS == "windows" {
+		t.Setenv("USERPROFILE", dir)
+	}
+}
 
 func TestDefaultConfig(t *testing.T) {
 	cfg := DefaultConfig()
@@ -96,7 +107,6 @@ func TestDefaultConfigZeroValueSafety(t *testing.T) {
 }
 
 func TestLoadReturnsDefaultsWhenNoConfigFile(t *testing.T) {
-	// Load from a dir with no config files
 	origDir, _ := os.Getwd()
 	os.Chdir(t.TempDir())
 	defer os.Chdir(origDir)
@@ -111,15 +121,13 @@ func TestLoadReturnsDefaultsWhenNoConfigFile(t *testing.T) {
 }
 
 func TestSaveAndLoad(t *testing.T) {
-	// Use a temp dir as home
 	tmpHome := t.TempDir()
-	t.Setenv("HOME", tmpHome)
+	setTestHome(t, tmpHome)
 
 	cfg := DefaultConfig()
 	cfg.Template.Format = "angular"
 	cfg.AI.ConfidenceThreshold = 0.5
 
-	// Save
 	err := Save(cfg)
 	if err != nil {
 		t.Fatalf("Save() failed: %v", err)
@@ -131,7 +139,6 @@ func TestSaveAndLoad(t *testing.T) {
 		t.Fatalf("config file not created: %v", err)
 	}
 
-	// Load it back
 	loaded, err := Load()
 	if err != nil {
 		t.Fatalf("Load() failed: %v", err)
@@ -147,7 +154,7 @@ func TestSaveAndLoad(t *testing.T) {
 
 func TestConfigDir(t *testing.T) {
 	tmpHome := t.TempDir()
-	t.Setenv("HOME", tmpHome)
+	setTestHome(t, tmpHome)
 
 	dir, err := ConfigDir()
 	if err != nil {
@@ -159,7 +166,6 @@ func TestConfigDir(t *testing.T) {
 		t.Errorf("expected '%s', got '%s'", expected, dir)
 	}
 
-	// Should have created the directory
 	if _, err := os.Stat(dir); err != nil {
 		t.Error("ConfigDir should create the directory")
 	}
@@ -167,7 +173,7 @@ func TestConfigDir(t *testing.T) {
 
 func TestGlobalConfigPath(t *testing.T) {
 	tmpHome := t.TempDir()
-	t.Setenv("HOME", tmpHome)
+	setTestHome(t, tmpHome)
 
 	path, err := GlobalConfigPath()
 	if err != nil {
@@ -206,14 +212,12 @@ func TestJournalDBPathOverride(t *testing.T) {
 
 func TestLoadRepoOverridesGlobal(t *testing.T) {
 	tmpHome := t.TempDir()
-	t.Setenv("HOME", tmpHome)
+	setTestHome(t, tmpHome)
 
-	// Save global config with angular
 	cfg := DefaultConfig()
 	cfg.Template.Format = "angular"
 	Save(cfg)
 
-	// Create a repo config that overrides to "custom"
 	tmpRepo := t.TempDir()
 	origDir, _ := os.Getwd()
 	os.Chdir(tmpRepo)
@@ -222,7 +226,6 @@ func TestLoadRepoOverridesGlobal(t *testing.T) {
 	repoConfig := []byte("[template]\nformat = 'custom'\n")
 	os.WriteFile(".gitx-commit.toml", repoConfig, 0644)
 
-	// Load — repo should override global
 	loaded, _ := Load()
 	if loaded.Template.Format != "custom" {
 		t.Errorf("repo config should override global, got '%s'", loaded.Template.Format)

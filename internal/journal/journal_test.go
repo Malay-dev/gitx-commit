@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 )
@@ -82,6 +83,9 @@ func TestOpenIdempotent(t *testing.T) {
 func TestOpenExpandsTilde(t *testing.T) {
 	tmpHome := t.TempDir()
 	t.Setenv("HOME", tmpHome)
+	if runtime.GOOS == "windows" {
+		t.Setenv("USERPROFILE", tmpHome)
+	}
 
 	j, err := Open("~/test-journal/commits.db")
 	if err != nil {

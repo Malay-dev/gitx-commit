@@ -3,6 +3,7 @@ package hook
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -59,14 +60,15 @@ func TestInstall(t *testing.T) {
 			t.Errorf("%s hook doesn't call git-xcommit, got: %s", name, content)
 		}
 
-		// Check file is executable (Unix permissions)
-		info, err := os.Stat(hookPath)
-		if err != nil {
-			t.Fatalf("failed to stat %s: %v", name, err)
-		}
-		// 0111 checks if any execute bit is set (owner/group/other)
-		if info.Mode()&0111 == 0 {
-			t.Errorf("%s hook is not executable, mode: %v", name, info.Mode())
+		// Check file is executable (Unix only — Windows doesn't have execute bits)
+		if runtime.GOOS != "windows" {
+			info, err := os.Stat(hookPath)
+			if err != nil {
+				t.Fatalf("failed to stat %s: %v", name, err)
+			}
+			if info.Mode()&0111 == 0 {
+				t.Errorf("%s hook is not executable, mode: %v", name, info.Mode())
+			}
 		}
 	}
 }
@@ -431,6 +433,9 @@ func TestInstallWriteFailure(t *testing.T) {
 func TestGlobalHooksDir(t *testing.T) {
 	tmpHome := t.TempDir()
 	t.Setenv("HOME", tmpHome)
+	if runtime.GOOS == "windows" {
+		t.Setenv("USERPROFILE", tmpHome)
+	}
 
 	dir, err := GlobalHooksDir()
 	if err != nil {
