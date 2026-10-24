@@ -263,6 +263,9 @@ func TestIsInstalledFalseForForeignHook(t *testing.T) {
 // --- Negative tests ---
 
 func TestInstallInvalidPath(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("skipping — Windows path handling differs")
+	}
 	// Act: install to a path that doesn't exist at all
 	err := Install("/nonexistent/fake/repo/path")
 
@@ -290,6 +293,9 @@ func TestInstallNotAGitRepo(t *testing.T) {
 }
 
 func TestInstallReadOnlyDirectory(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("skipping — Windows does not enforce read-only on directories")
+	}
 	// Setup: create .git dir but make it read-only
 	repoPath := t.TempDir()
 	gitDir := filepath.Join(repoPath, ".git")
@@ -407,6 +413,9 @@ func TestIsInstalledNonexistentRepo(t *testing.T) {
 }
 
 func TestInstallWriteFailure(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("skipping — Windows does not enforce read-only on directories")
+	}
 	repoPath := setupFakeRepo(t)
 	hooksDir := filepath.Join(repoPath, ".git", "hooks")
 
