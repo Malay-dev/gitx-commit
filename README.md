@@ -1,6 +1,25 @@
-# gitx-commit
+<p align="center">
+  <img src="gitx-commit.png" alt="gitx-commit"/>
+</p>
 
-**Intelligent commit companion — AI provenance, templates, and commit journal for Git.**
+<h1 align="center">gitx-commit</h1>
+
+<p align="center">
+  <a href="https://github.com/Malay-dev/gitx-commit/actions/workflows/ci.yml"><img src="https://github.com/Malay-dev/gitx-commit/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+  <a href="https://goreportcard.com/report/github.com/Malay-dev/gitx-commit"><img src="https://goreportcard.com/badge/github.com/Malay-dev/gitx-commit" alt="Go Report Card" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT" /></a>
+</p>
+
+<p align="center"><strong>Intelligent commit companion — AI provenance, templates, and commit journal for Git.</strong></p>
+
+```
+$ git commit -m "feat: add OAuth login"
+
+feat: add OAuth login
+
+Assisted-by: Kiro (claude-opus-4.6)
+Commit-Mode: AI Assisted
+```
 
 gitx-commit augments `git commit` with automatic AI tool detection, commit message trailers, and a local commit journal across all your repositories. It hooks into your normal Git workflow transparently — no new commands to learn.
 
