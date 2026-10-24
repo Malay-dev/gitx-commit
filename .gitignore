@@ -27,4 +27,10 @@ coverage.html
 
 # Docs
 idea.md
+
+# Export outputs
+gitx-commits.json
+gitx-commits.csv
+gitx-commits.md
 RESEARCH.md
+ROADMAP.md

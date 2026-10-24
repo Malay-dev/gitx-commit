@@ -3,6 +3,7 @@ module github.com/Malay-dev/gitx-commit
 go 1.27.1
 
 require (
+	github.com/pelletier/go-toml/v2 v2.4.3
 	github.com/spf13/cobra v1.8.1
 	modernc.org/sqlite v1.61.0
 )

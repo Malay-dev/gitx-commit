@@ -5,6 +5,8 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
+
+	"github.com/Malay-dev/gitx-commit/internal/config"
 )
 
 var (
@@ -59,4 +61,12 @@ func Execute() error {
 		return err
 	}
 	return nil
+}
+
+// loadConfig loads config with fallback to defaults.
+// Error is intentionally ignored — Load() returns defaults on any failure
+// (missing file, bad TOML, etc.). The tool must always work without a config file.
+func loadConfig() *config.Config {
+	cfg, _ := config.Load()
+	return cfg
 }
