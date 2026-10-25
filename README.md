@@ -294,15 +294,6 @@ make all
 
 MIT — see [LICENSE](LICENSE).
 
-## Roadmap
-
-See [ROADMAP.md](ROADMAP.md) for the full feature roadmap, including:
-
-- **v0.2** — Commit templates & journal enrichment (import, search, sessions)
-- **v0.3** — Offline LLM commit message generation (Ollama + Qwen/Nemotron)
-- **v0.4** — Intelligence & analytics (year-end reviews, trends, insights)
-- **v0.5** — Ecosystem & integrations (MCP server, plugins, team sync)
-
 ## Part of the gitx ecosystem
 
 - [gitx-profile](https://github.com/Malay-dev/gitx-profile) — Manage multiple Git identities
