@@ -48,6 +48,7 @@ Examples:
 }
 
 func init() {
+	rootCmd.Version = buildVersion
 	rootCmd.SetVersionTemplate(fmt.Sprintf(
 		"gitx-commit %s (commit: %s, built: %s)\n",
 		buildVersion, buildCommit, buildDate,
