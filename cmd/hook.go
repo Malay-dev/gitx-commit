@@ -78,6 +78,11 @@ func runPrepareCommitMsg(msgFile, source string) error {
 		return nil
 	}
 
+	// Skip trailer injection on merge and squash commits — they're automated
+	if source == "merge" || source == "squash" {
+		return nil
+	}
+
 	// Read the commit message
 	msgBytes, err := os.ReadFile(msgFile)
 	if err != nil {
