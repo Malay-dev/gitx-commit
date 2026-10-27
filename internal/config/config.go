@@ -151,6 +151,16 @@ func Save(cfg *Config) error {
 	return os.WriteFile(path, data, 0644)
 }
 
+// SaveLocal writes the config to the repo-level config file (.gitx-commit.toml).
+func SaveLocal(cfg *Config) error {
+	data, err := toml.Marshal(cfg)
+	if err != nil {
+		return err
+	}
+
+	return os.WriteFile(RepoConfigPath(), data, 0644)
+}
+
 // loadFromFile reads a TOML file and unmarshals it into the config.
 // Silently returns if the file doesn't exist — this is expected.
 func loadFromFile(path string, cfg *Config) {

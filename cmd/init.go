@@ -11,14 +11,19 @@ import (
 
 	"github.com/Malay-dev/gitx-commit/internal/config"
 	"github.com/Malay-dev/gitx-commit/internal/hook"
+	"github.com/Malay-dev/gitx-commit/internal/ui"
 )
+
+var initLocal bool
 
 var initCmd = &cobra.Command{
 	Use:   "init",
 	Short: "Interactive setup wizard for gitx-commit",
-	Long: `Walks you through configuring gitx-commit for the first time.
-Sets up the global config file, installs hooks in the current
-repository, and shows detected AI tools.`,
+	Long: `Walks you through configuring gitx-commit.
+
+Without flags, sets up the global config (~/.gitx/commit-config.toml).
+With --local, creates a repo-level override (.gitx-commit.toml) that
+inherits from global — you only change what's different for this repo.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runInit()
 	},
@@ -27,39 +32,41 @@ repository, and shows detected AI tools.`,
 func runInit() error {
 	reader := bufio.NewReader(os.Stdin)
 
+	if initLocal {
+		return runInitLocal(reader)
+	}
+	return runInitGlobal(reader)
+}
+
+func runInitGlobal(reader *bufio.Reader) error {
 	fmt.Println()
-	fmt.Println("  gitx-commit setup")
-	fmt.Println("  ─────────────────")
+	fmt.Println("  gitx-commit — global setup")
+	fmt.Println("  ──────────────────────────")
 	fmt.Println()
 
 	cfg := config.DefaultConfig()
 
-	// 1. Template format
-	fmt.Printf("  Commit template format (conventional/angular/none) [conventional]: ")
+	fmt.Printf("  Commit template format (conventional/angular/none) [%s]: ", cfg.Template.Format)
 	if answer := readLine(reader); answer != "" {
 		cfg.Template.Format = answer
 	}
 
-	// 2. Trailer format
-	fmt.Printf("  Trailer key (Assisted-by/Co-authored-by/Drafted-With) [Assisted-by]: ")
+	fmt.Printf("  Trailer key (Assisted-by/Co-authored-by/Drafted-With) [%s]: ", cfg.Template.Trailer.Format)
 	if answer := readLine(reader); answer != "" {
 		cfg.Template.Trailer.Format = answer
 	}
 
-	// 3. Include model in trailer
 	fmt.Printf("  Include AI model in trailer? (y/n) [y]: ")
 	if answer := readLine(reader); answer == "n" || answer == "N" {
 		cfg.Template.Trailer.IncludeModel = false
 	}
 
-	// 4. AI detection mode
-	fmt.Printf("  AI detection mode (auto/manual/off) [auto]: ")
+	fmt.Printf("  AI detection mode (auto/manual/off) [%s]: ", cfg.AI.Mode)
 	if answer := readLine(reader); answer != "" {
 		cfg.AI.Mode = answer
 	}
 
-	// 5. Confidence threshold
-	fmt.Printf("  Detection confidence threshold (0.0-1.0) [0.7]: ")
+	fmt.Printf("  Detection confidence threshold (0.0-1.0) [%.1f]: ", cfg.AI.ConfidenceThreshold)
 	if answer := readLine(reader); answer != "" {
 		var threshold float64
 		if _, err := fmt.Sscanf(answer, "%f", &threshold); err == nil {
@@ -67,21 +74,144 @@ func runInit() error {
 		}
 	}
 
-	// 6. Journal
 	fmt.Printf("  Enable commit journal? (y/n) [y]: ")
 	if answer := readLine(reader); answer == "n" || answer == "N" {
 		cfg.Journal.Enabled = false
 	}
 
-	// Save config
 	if err := config.Save(cfg); err != nil {
 		return fmt.Errorf("failed to save config: %w", err)
 	}
 
 	path, _ := config.GlobalConfigPath()
-	fmt.Printf("\n  ✓ Config saved to %s\n", path)
+	ui.Success("Config saved to %s", path)
 
-	// 7. Enable in current repo?
+	// Enable in current repo?
+	installHooksIfNeeded(reader)
+
+	fmt.Printf("\n  Setup complete! Run 'git xcommit status' to verify.\n\n")
+	return nil
+}
+
+func runInitLocal(reader *bufio.Reader) error {
+	// Check we're in a git repo
+	out, err := exec.Command("git", "rev-parse", "--show-toplevel").Output()
+	if err != nil {
+		return fmt.Errorf("not a git repository — --local requires a repo")
+	}
+	repoPath := strings.TrimSpace(string(out))
+
+	// Load global config as the baseline
+	globalCfg := loadConfig()
+
+	fmt.Println()
+	fmt.Println("  gitx-commit — repo-level config")
+	fmt.Println("  ───────────────────────────────")
+	fmt.Printf("  Repository: %s\n", repoPath)
+	fmt.Println()
+	fmt.Println("  Current global values shown in brackets.")
+	fmt.Println("  Press Enter to keep, or type a new value to override.")
+	fmt.Println()
+
+	// We build a partial config — only changed fields get written
+	repoCfg := config.DefaultConfig()
+	changed := false
+
+	// Template format
+	fmt.Printf("  Commit template format [%s]: ", globalCfg.Template.Format)
+	if answer := readLine(reader); answer != "" && answer != globalCfg.Template.Format {
+		repoCfg.Template.Format = answer
+		changed = true
+	} else {
+		repoCfg.Template.Format = globalCfg.Template.Format
+	}
+
+	// Trailer format
+	fmt.Printf("  Trailer key [%s]: ", globalCfg.Template.Trailer.Format)
+	if answer := readLine(reader); answer != "" && answer != globalCfg.Template.Trailer.Format {
+		repoCfg.Template.Trailer.Format = answer
+		changed = true
+	} else {
+		repoCfg.Template.Trailer.Format = globalCfg.Template.Trailer.Format
+	}
+
+	// Include model
+	modelDefault := "y"
+	if !globalCfg.Template.Trailer.IncludeModel {
+		modelDefault = "n"
+	}
+	fmt.Printf("  Include AI model in trailer? (y/n) [%s]: ", modelDefault)
+	if answer := readLine(reader); answer != "" {
+		newVal := answer != "n" && answer != "N"
+		if newVal != globalCfg.Template.Trailer.IncludeModel {
+			repoCfg.Template.Trailer.IncludeModel = newVal
+			changed = true
+		} else {
+			repoCfg.Template.Trailer.IncludeModel = globalCfg.Template.Trailer.IncludeModel
+		}
+	} else {
+		repoCfg.Template.Trailer.IncludeModel = globalCfg.Template.Trailer.IncludeModel
+	}
+
+	// AI mode
+	fmt.Printf("  AI detection mode (auto/manual/off) [%s]: ", globalCfg.AI.Mode)
+	if answer := readLine(reader); answer != "" && answer != globalCfg.AI.Mode {
+		repoCfg.AI.Mode = answer
+		changed = true
+	} else {
+		repoCfg.AI.Mode = globalCfg.AI.Mode
+	}
+
+	// Confidence
+	fmt.Printf("  Detection confidence threshold [%.1f]: ", globalCfg.AI.ConfidenceThreshold)
+	if answer := readLine(reader); answer != "" {
+		var threshold float64
+		if _, err := fmt.Sscanf(answer, "%f", &threshold); err == nil && threshold != globalCfg.AI.ConfidenceThreshold {
+			repoCfg.AI.ConfidenceThreshold = threshold
+			changed = true
+		} else {
+			repoCfg.AI.ConfidenceThreshold = globalCfg.AI.ConfidenceThreshold
+		}
+	} else {
+		repoCfg.AI.ConfidenceThreshold = globalCfg.AI.ConfidenceThreshold
+	}
+
+	// Journal
+	journalDefault := "y"
+	if !globalCfg.Journal.Enabled {
+		journalDefault = "n"
+	}
+	fmt.Printf("  Enable commit journal? (y/n) [%s]: ", journalDefault)
+	if answer := readLine(reader); answer != "" {
+		newVal := answer != "n" && answer != "N"
+		if newVal != globalCfg.Journal.Enabled {
+			repoCfg.Journal.Enabled = newVal
+			changed = true
+		} else {
+			repoCfg.Journal.Enabled = globalCfg.Journal.Enabled
+		}
+	} else {
+		repoCfg.Journal.Enabled = globalCfg.Journal.Enabled
+	}
+
+	if !changed {
+		fmt.Println()
+		ui.Info("No changes — repo config not created (global settings apply)")
+	} else {
+		if err := config.SaveLocal(repoCfg); err != nil {
+			return fmt.Errorf("failed to save repo config: %w", err)
+		}
+		ui.Success("Repo config saved to %s", config.RepoConfigPath())
+	}
+
+	// Enable hooks if needed
+	installHooksIfNeeded(reader)
+
+	fmt.Printf("\n  Setup complete! Run 'git xcommit config show' to verify.\n\n")
+	return nil
+}
+
+func installHooksIfNeeded(reader *bufio.Reader) {
 	repoPath := ""
 	out, err := exec.Command("git", "rev-parse", "--show-toplevel").Output()
 	if err == nil {
@@ -89,18 +219,15 @@ func runInit() error {
 	}
 
 	if repoPath != "" && !hook.IsInstalled(repoPath) {
-		fmt.Printf("\n  Enable gitx-commit in %s? (y/n) [y]: ", repoPath)
+		fmt.Printf("\n  Enable gitx-commit hooks in this repo? (y/n) [y]: ")
 		if answer := readLine(reader); answer != "n" && answer != "N" {
 			if err := hook.Install(repoPath); err != nil {
 				fmt.Printf("  ✗ Failed to install hooks: %v\n", err)
 			} else {
-				fmt.Printf("  ✓ Hooks installed\n")
+				ui.Success("Hooks installed")
 			}
 		}
 	}
-
-	fmt.Printf("\n  Setup complete! Run 'git xcommit status' to verify.\n\n")
-	return nil
 }
 
 // readLine reads a line from stdin, trimming whitespace.
@@ -110,5 +237,6 @@ func readLine(reader *bufio.Reader) string {
 }
 
 func init() {
+	initCmd.Flags().BoolVar(&initLocal, "local", false, "create repo-level config override (.gitx-commit.toml)")
 	rootCmd.AddCommand(initCmd)
 }
