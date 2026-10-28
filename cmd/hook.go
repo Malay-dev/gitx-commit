@@ -104,6 +104,13 @@ func runPrepareCommitMsg(msgFile, source string) error {
 	}
 
 	if cfg.AI.Enabled {
+		// Config-level override (from .gitx-commit.toml or global config)
+		// Sets GITX_AI_TOOL env so Detect() picks it up
+		if cfg.AI.OverrideTool != "" && os.Getenv("GITX_AI_TOOL") == "" {
+			os.Setenv("GITX_AI_TOOL", cfg.AI.OverrideTool)
+			defer os.Unsetenv("GITX_AI_TOOL")
+		}
+
 		// Detect AI tool
 		result := detect.Detect(repoPath)
 
@@ -154,6 +161,12 @@ func runPostCommit() error {
 	repoPath := ""
 	if out, err := exec.Command("git", "rev-parse", "--show-toplevel").Output(); err == nil {
 		repoPath = strings.TrimSpace(string(out))
+	}
+
+	// Config-level override
+	if cfg.AI.OverrideTool != "" && os.Getenv("GITX_AI_TOOL") == "" {
+		os.Setenv("GITX_AI_TOOL", cfg.AI.OverrideTool)
+		defer os.Unsetenv("GITX_AI_TOOL")
 	}
 
 	record.CommitMode = "Manual"
