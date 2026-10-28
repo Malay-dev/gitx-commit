@@ -180,6 +180,21 @@ func runInitLocal(reader *bufio.Reader) error {
 		repoCfg.AI.ConfidenceThreshold = globalCfg.AI.ConfidenceThreshold
 	}
 
+	// Override tool — always attribute commits to a specific AI tool
+	currentOverride := globalCfg.AI.OverrideTool
+	if currentOverride == "" {
+		currentOverride = "none"
+	}
+	fmt.Printf("  Always attribute to AI tool (tool name, or 'none') [%s]: ", currentOverride)
+	if answer := readLine(reader); answer != "" {
+		if answer == "none" {
+			repoCfg.AI.OverrideTool = ""
+		} else if answer != globalCfg.AI.OverrideTool {
+			repoCfg.AI.OverrideTool = answer
+			changed = true
+		}
+	}
+
 	// Journal
 	journalDefault := "y"
 	if !globalCfg.Journal.Enabled {
