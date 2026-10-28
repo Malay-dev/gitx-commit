@@ -98,19 +98,17 @@ func runPrepareCommitMsg(msgFile, source string) error {
 	}
 
 	// Determine commit mode
-	commitMode := "Manual"
-
 	// Check explicit override first
 	if modeOverride := os.Getenv("GITX_COMMIT_MODE"); modeOverride != "" {
-		commitMode = modeOverride
-	} else if cfg.AI.Enabled {
+		_ = modeOverride // mode stored in journal via post-commit, not in message
+	}
+
+	if cfg.AI.Enabled {
 		// Detect AI tool
 		result := detect.Detect(repoPath)
 
 		if result != nil && result.Confidence >= cfg.AI.ConfidenceThreshold {
-			commitMode = "AI Assisted"
-
-			// Add Assisted-by trailer
+			// Add Assisted-by trailer only
 			key := cfg.Template.Trailer.Format
 			value := trailer.BuildTrailerValue(
 				result.Tool,
@@ -121,12 +119,11 @@ func runPrepareCommitMsg(msgFile, source string) error {
 		}
 	}
 
-	// Always add Commit-Mode trailer
-	message = trailer.AddTrailer(message, "Commit-Mode", commitMode)
-
-	// Write modified message back
-	if err := os.WriteFile(msgFile, []byte(message), 0644); err != nil {
-		return fmt.Errorf("failed to write commit message: %w", err)
+	// Only write the message if we added a trailer
+	if message != string(msgBytes) {
+		if err := os.WriteFile(msgFile, []byte(message), 0644); err != nil {
+			return fmt.Errorf("failed to write commit message: %w", err)
+		}
 	}
 
 	return nil
