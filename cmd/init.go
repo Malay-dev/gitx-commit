@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -86,8 +87,11 @@ func runInitGlobal(reader *bufio.Reader) error {
 	path, _ := config.GlobalConfigPath()
 	ui.Success("Config saved to %s", path)
 
-	// Enable in current repo?
+	// Enable hooks if needed
 	installHooksIfNeeded(reader)
+
+	// Ensure .gitx-commit.toml is globally gitignored
+	ensureGlobalGitignore()
 
 	fmt.Printf("\n  Setup complete! Run 'git xcommit status' to verify.\n\n")
 	return nil
@@ -207,6 +211,9 @@ func runInitLocal(reader *bufio.Reader) error {
 	// Enable hooks if needed
 	installHooksIfNeeded(reader)
 
+	// Ensure .gitx-commit.toml is globally gitignored
+	ensureGlobalGitignore()
+
 	fmt.Printf("\n  Setup complete! Run 'git xcommit config show' to verify.\n\n")
 	return nil
 }
@@ -228,6 +235,55 @@ func installHooksIfNeeded(reader *bufio.Reader) {
 			}
 		}
 	}
+}
+
+// ensureGlobalGitignore adds .gitx-commit.toml to the global gitignore
+// so repo-level configs are never accidentally committed.
+func ensureGlobalGitignore() {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return
+	}
+
+	// Get or set the global excludes file
+	globalIgnorePath := ""
+	out, err := exec.Command("git", "config", "--global", "core.excludesFile").Output()
+	if err == nil {
+		globalIgnorePath = strings.TrimSpace(string(out))
+	}
+
+	if globalIgnorePath == "" {
+		globalIgnorePath = filepath.Join(home, ".gitignore")
+		exec.Command("git", "config", "--global", "core.excludesFile", globalIgnorePath).Run()
+	}
+
+	// Expand ~ if present
+	if strings.HasPrefix(globalIgnorePath, "~") {
+		globalIgnorePath = filepath.Join(home, globalIgnorePath[1:])
+	}
+
+	// Check if .gitx-commit.toml is already in the file
+	existing, _ := os.ReadFile(globalIgnorePath)
+	if strings.Contains(string(existing), ".gitx-commit.toml") {
+		return // already there
+	}
+
+	// Append it
+	f, err := os.OpenFile(globalIgnorePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+
+	// Add newline if file doesn't end with one
+	if len(existing) > 0 && existing[len(existing)-1] != '\n' {
+		f.WriteString("\n")
+	}
+
+	f.WriteString("# gitx-commit repo config (personal, not committed)\n")
+	f.WriteString(".gitx-commit.toml\n")
+
+	ui.Success(".gitx-commit.toml added to global gitignore (%s)", globalIgnorePath)
 }
 
 // readLine reads a line from stdin, trimming whitespace.
