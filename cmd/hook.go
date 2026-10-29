@@ -110,6 +110,10 @@ func runPrepareCommitMsg(msgFile, source string) error {
 			os.Setenv("GITX_AI_TOOL", cfg.AI.OverrideTool)
 			defer os.Unsetenv("GITX_AI_TOOL")
 		}
+		if cfg.AI.OverrideModel != "" && os.Getenv("GITX_AI_MODEL") == "" {
+			os.Setenv("GITX_AI_MODEL", cfg.AI.OverrideModel)
+			defer os.Unsetenv("GITX_AI_MODEL")
+		}
 
 		// Detect AI tool
 		result := detect.Detect(repoPath)
@@ -167,6 +171,10 @@ func runPostCommit() error {
 	if cfg.AI.OverrideTool != "" && os.Getenv("GITX_AI_TOOL") == "" {
 		os.Setenv("GITX_AI_TOOL", cfg.AI.OverrideTool)
 		defer os.Unsetenv("GITX_AI_TOOL")
+	}
+	if cfg.AI.OverrideModel != "" && os.Getenv("GITX_AI_MODEL") == "" {
+		os.Setenv("GITX_AI_MODEL", cfg.AI.OverrideModel)
+		defer os.Unsetenv("GITX_AI_MODEL")
 	}
 
 	record.CommitMode = "Manual"

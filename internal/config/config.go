@@ -39,6 +39,7 @@ type AIConfig struct {
 	Enabled             bool    `toml:"enabled"`
 	Mode                string  `toml:"mode"`
 	OverrideTool        string  `toml:"override_tool"`
+	OverrideModel       string  `toml:"override_model"`
 	ConfidenceThreshold float64 `toml:"confidence_threshold"`
 }
 
