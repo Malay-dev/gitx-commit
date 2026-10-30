@@ -2,8 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"os/exec"
-	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -25,11 +23,7 @@ Works both inside and outside a git repository.`,
 }
 
 func showStatus() error {
-	repoPath := ""
-	out, err := exec.Command("git", "rev-parse", "--show-toplevel").Output()
-	if err == nil {
-		repoPath = strings.TrimSpace(string(out))
-	}
+	repoPath := getRepoPath()
 
 	cfg := loadConfig()
 
@@ -65,7 +59,7 @@ func showStatus() error {
 	// Detection
 	fmt.Println()
 	if repoPath != "" {
-		result := detect.Detect(repoPath)
+		result := detect.Detect(repoPath, nil)
 		if result != nil {
 			detectedStr := result.Tool
 			if result.Version != "" {

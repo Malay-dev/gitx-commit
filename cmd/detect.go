@@ -3,8 +3,6 @@ package cmd
 import (
 	"fmt"
 	"os"
-	"os/exec"
-	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -22,11 +20,7 @@ var detectCmd = &cobra.Command{
 }
 
 func showDetected() error {
-	repoPath := ""
-	out, err := exec.Command("git", "rev-parse", "--show-toplevel").Output()
-	if err == nil {
-		repoPath = strings.TrimSpace(string(out))
-	}
+	repoPath := getRepoPath()
 
 	results := detect.DetectAll(repoPath)
 

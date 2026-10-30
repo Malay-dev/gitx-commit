@@ -3,7 +3,6 @@ package cmd
 import (
 	"fmt"
 	"os/exec"
-	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -35,11 +34,10 @@ func enableGitXCommit() error {
 		return enableGlobalHooks()
 	}
 
-	out, err := exec.Command("git", "rev-parse", "--show-toplevel").Output()
+	repoPath, err := requireRepoPath()
 	if err != nil {
-		return fmt.Errorf("not a git repository")
+		return err
 	}
-	repoPath := strings.TrimSpace(string(out))
 
 	if enableForce {
 		// Force mode — remove existing hooks first

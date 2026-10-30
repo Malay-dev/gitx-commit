@@ -3,7 +3,6 @@ package cmd
 import (
 	"fmt"
 	"os/exec"
-	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -31,11 +30,10 @@ func disableGitXCommit() error {
 		return disableGlobalHooks()
 	}
 
-	out, err := exec.Command("git", "rev-parse", "--show-toplevel").Output()
+	repoPath, err := requireRepoPath()
 	if err != nil {
-		return fmt.Errorf("not a git repository")
+		return err
 	}
-	repoPath := strings.TrimSpace(string(out))
 
 	if err := hook.Remove(repoPath); err != nil {
 		return fmt.Errorf("failed to remove hooks: %w", err)

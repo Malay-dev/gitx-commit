@@ -3,6 +3,8 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"os/exec"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -70,4 +72,22 @@ func Execute() error {
 func loadConfig() *config.Config {
 	cfg, _ := config.Load()
 	return cfg
+}
+
+// getRepoPath returns the git repo root, or empty string if not in a repo.
+func getRepoPath() string {
+	out, err := exec.Command("git", "rev-parse", "--show-toplevel").Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
+}
+
+// requireRepoPath returns the repo root or an error if not in a repo.
+func requireRepoPath() (string, error) {
+	path := getRepoPath()
+	if path == "" {
+		return "", fmt.Errorf("not a git repository")
+	}
+	return path, nil
 }

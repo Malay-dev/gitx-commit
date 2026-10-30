@@ -91,32 +91,17 @@ func runPrepareCommitMsg(msgFile, source string) error {
 	message := string(msgBytes)
 
 	// Find repo root for detection
-	repoPath := ""
-	out, err := exec.Command("git", "rev-parse", "--show-toplevel").Output()
-	if err == nil {
-		repoPath = strings.TrimSpace(string(out))
-	}
-
-	// Determine commit mode
-	// Check explicit override first
-	if modeOverride := os.Getenv("GITX_COMMIT_MODE"); modeOverride != "" {
-		_ = modeOverride // mode stored in journal via post-commit, not in message
-	}
+	repoPath := getRepoPath()
 
 	if cfg.AI.Enabled {
-		// Config-level override (from .gitx-commit.toml or global config)
-		// Sets GITX_AI_TOOL env so Detect() picks it up
-		if cfg.AI.OverrideTool != "" && os.Getenv("GITX_AI_TOOL") == "" {
-			os.Setenv("GITX_AI_TOOL", cfg.AI.OverrideTool)
-			defer os.Unsetenv("GITX_AI_TOOL")
-		}
-		if cfg.AI.OverrideModel != "" && os.Getenv("GITX_AI_MODEL") == "" {
-			os.Setenv("GITX_AI_MODEL", cfg.AI.OverrideModel)
-			defer os.Unsetenv("GITX_AI_MODEL")
+		// Build detection options from config overrides
+		opts := &detect.DetectOptions{
+			OverrideTool:  cfg.AI.OverrideTool,
+			OverrideModel: cfg.AI.OverrideModel,
 		}
 
 		// Detect AI tool
-		result := detect.Detect(repoPath)
+		result := detect.Detect(repoPath, opts)
 
 		if result != nil && result.Confidence >= cfg.AI.ConfidenceThreshold {
 			// Add Assisted-by trailer only
@@ -162,25 +147,18 @@ func runPostCommit() error {
 	}
 
 	// Add AI detection info
-	repoPath := ""
-	if out, err := exec.Command("git", "rev-parse", "--show-toplevel").Output(); err == nil {
-		repoPath = strings.TrimSpace(string(out))
-	}
+	repoPath := getRepoPath()
 
 	// Config-level override
-	if cfg.AI.OverrideTool != "" && os.Getenv("GITX_AI_TOOL") == "" {
-		os.Setenv("GITX_AI_TOOL", cfg.AI.OverrideTool)
-		defer os.Unsetenv("GITX_AI_TOOL")
-	}
-	if cfg.AI.OverrideModel != "" && os.Getenv("GITX_AI_MODEL") == "" {
-		os.Setenv("GITX_AI_MODEL", cfg.AI.OverrideModel)
-		defer os.Unsetenv("GITX_AI_MODEL")
+	opts := &detect.DetectOptions{
+		OverrideTool:  cfg.AI.OverrideTool,
+		OverrideModel: cfg.AI.OverrideModel,
 	}
 
 	record.CommitMode = "Manual"
 	if modeOverride := os.Getenv("GITX_COMMIT_MODE"); modeOverride != "" {
 		record.CommitMode = modeOverride
-	} else if result := detect.Detect(repoPath); result != nil && result.Confidence >= cfg.AI.ConfidenceThreshold {
+	} else if result := detect.Detect(repoPath, opts); result != nil && result.Confidence >= cfg.AI.ConfidenceThreshold {
 		record.AITool = result.Tool
 		record.AIModel = result.Model
 		record.Confidence = result.Confidence

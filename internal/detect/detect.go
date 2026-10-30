@@ -16,21 +16,30 @@ type DetectionResult struct {
 	Method     string  // how we detected it: "env", "repo_file", "home_file", "override"
 }
 
+// DetectOptions holds optional overrides from config or env vars.
+// These take highest precedence after the GITX_AI_TOOL env var.
+type DetectOptions struct {
+	OverrideTool  string // from config: ai.override_tool
+	OverrideModel string // from config: ai.override_model
+}
+
 // Detect runs the layered detection algorithm and returns the
 // highest-confidence match, or nil if no AI tool is detected.
 //
 // Detection order (cheapest → most expensive):
 //  1. Explicit override via GITX_AI_TOOL env var
-//  2. Environment variables (proves active agent in this shell)
-//  3. Repo config files (proves tool used in this repo)
-//  4. Home directory files (proves tool is installed — weakest signal)
+//  2. Config-level override (opts.OverrideTool)
+//  3. Environment variables (proves active agent in this shell)
+//  4. Repo config files (proves tool used in this repo)
+//  5. Home directory files (proves tool is installed — weakest signal)
 //
 // After detection, the model is resolved from:
 //  1. GITX_AI_MODEL env var (explicit override)
-//  2. Tool-specific model env var (e.g., GEMINI_MODEL)
-//  3. Tool-specific config file (e.g., ~/.kiro/settings/cli.json)
-func Detect(repoPath string) *DetectionResult {
-	// Layer 0: explicit override — highest precedence
+//  2. Config-level override (opts.OverrideModel)
+//  3. Tool-specific model env var (e.g., GEMINI_MODEL)
+//  4. Tool-specific config file (e.g., ~/.kiro/settings/cli.json)
+func Detect(repoPath string, opts *DetectOptions) *DetectionResult {
+	// Layer 0: explicit env override — highest precedence
 	if override := os.Getenv("GITX_AI_TOOL"); override != "" {
 		if override == "none" {
 			return nil
@@ -40,8 +49,25 @@ func Detect(repoPath string) *DetectionResult {
 			Confidence: 1.0,
 			Method:     "override",
 		}
-		// Check for explicit model override
 		result.Model = os.Getenv("GITX_AI_MODEL")
+		if result.Model == "" && opts != nil && opts.OverrideModel != "" {
+			result.Model = opts.OverrideModel
+		}
+		return result
+	}
+
+	// Layer 0.5: config-level override
+	if opts != nil && opts.OverrideTool != "" {
+		result := &DetectionResult{
+			Tool:       opts.OverrideTool,
+			Confidence: 1.0,
+			Method:     "override",
+		}
+		if model := os.Getenv("GITX_AI_MODEL"); model != "" {
+			result.Model = model
+		} else if opts.OverrideModel != "" {
+			result.Model = opts.OverrideModel
+		}
 		return result
 	}
 

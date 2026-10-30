@@ -25,7 +25,7 @@ func TestDetectNoSignals(t *testing.T) {
 	clearAllToolEnvVars(t)
 	repoPath := t.TempDir()
 
-	result := Detect(repoPath)
+	result := Detect(repoPath, nil)
 
 	// On a machine with AI tools installed in home dir, this may still
 	// detect something via home_file. On a clean CI machine, result is nil.
@@ -41,7 +41,7 @@ func TestDetectExplicitOverride(t *testing.T) {
 	// Override takes highest precedence — no need to clear other vars
 	t.Setenv("GITX_AI_TOOL", "MyCustomTool")
 
-	result := Detect(repoPath)
+	result := Detect(repoPath, nil)
 
 	if result == nil {
 		t.Fatal("expected detection result with override")
@@ -61,7 +61,7 @@ func TestDetectOverrideNone(t *testing.T) {
 	repoPath := t.TempDir()
 	t.Setenv("GITX_AI_TOOL", "none")
 
-	result := Detect(repoPath)
+	result := Detect(repoPath, nil)
 
 	if result != nil {
 		t.Errorf("GITX_AI_TOOL=none should return nil, got %+v", result)
@@ -76,7 +76,7 @@ func TestDetectKiroEnvVar(t *testing.T) {
 	t.Setenv("KIRO_SESSION_ID", "test-session-123")
 	t.Setenv("KIRO_VERSION", "2.32.0")
 
-	result := Detect(repoPath)
+	result := Detect(repoPath, nil)
 
 	if result == nil {
 		t.Fatal("expected Kiro detection")
@@ -101,7 +101,7 @@ func TestDetectClaudeCodeEnv(t *testing.T) {
 
 	t.Setenv("CLAUDECODE", "1")
 
-	result := Detect(repoPath)
+	result := Detect(repoPath, nil)
 
 	if result == nil {
 		t.Fatal("expected Claude Code detection")
@@ -117,7 +117,7 @@ func TestDetectCursorEnv(t *testing.T) {
 
 	t.Setenv("CURSOR_AGENT", "1")
 
-	result := Detect(repoPath)
+	result := Detect(repoPath, nil)
 
 	if result == nil {
 		t.Fatal("expected Cursor detection")
@@ -134,7 +134,7 @@ func TestDetectRepoFile(t *testing.T) {
 	// Create a CLAUDE.md file in the repo
 	os.WriteFile(filepath.Join(repoPath, "CLAUDE.md"), []byte("# Claude context"), 0644)
 
-	result := Detect(repoPath)
+	result := Detect(repoPath, nil)
 
 	if result == nil {
 		t.Fatal("expected detection from CLAUDE.md")
@@ -156,7 +156,7 @@ func TestDetectRepoDir(t *testing.T) {
 
 	os.MkdirAll(filepath.Join(repoPath, ".cursor"), 0755)
 
-	result := Detect(repoPath)
+	result := Detect(repoPath, nil)
 
 	if result == nil {
 		t.Fatal("expected detection from .cursor dir")
@@ -172,7 +172,7 @@ func TestDetectAiderFiles(t *testing.T) {
 
 	os.WriteFile(filepath.Join(repoPath, ".aider.chat.history.md"), []byte("chat log"), 0644)
 
-	result := Detect(repoPath)
+	result := Detect(repoPath, nil)
 
 	if result == nil {
 		t.Fatal("expected detection from aider files")
@@ -188,7 +188,7 @@ func TestDetectGeminiFiles(t *testing.T) {
 
 	os.WriteFile(filepath.Join(repoPath, "GEMINI.md"), []byte("# Gemini context"), 0644)
 
-	result := Detect(repoPath)
+	result := Detect(repoPath, nil)
 
 	if result == nil {
 		t.Fatal("expected detection from GEMINI.md")
@@ -206,7 +206,7 @@ func TestDetectEnvWinsOverRepoFile(t *testing.T) {
 	t.Setenv("KIRO_SESSION_ID", "test-session")
 	os.WriteFile(filepath.Join(repoPath, "CLAUDE.md"), []byte("context"), 0644)
 
-	result := Detect(repoPath)
+	result := Detect(repoPath, nil)
 
 	if result == nil {
 		t.Fatal("expected detection")
@@ -260,7 +260,7 @@ func TestDetectOverrideTakesPrecedenceOverEverything(t *testing.T) {
 	os.WriteFile(filepath.Join(repoPath, "CLAUDE.md"), []byte("context"), 0644)
 	t.Setenv("GITX_AI_TOOL", "CustomAgent")
 
-	result := Detect(repoPath)
+	result := Detect(repoPath, nil)
 
 	if result == nil {
 		t.Fatal("expected detection")

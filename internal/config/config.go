@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -163,11 +164,14 @@ func SaveLocal(cfg *Config) error {
 }
 
 // loadFromFile reads a TOML file and unmarshals it into the config.
-// Silently returns if the file doesn't exist — this is expected.
+// Missing files are silently skipped (expected). Parse errors are
+// logged to stderr so the user knows their config is being ignored.
 func loadFromFile(path string, cfg *Config) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return // file doesn't exist — that's fine
 	}
-	toml.Unmarshal(data, cfg)
+	if err := toml.Unmarshal(data, cfg); err != nil {
+		fmt.Fprintf(os.Stderr, "gitx-commit: warning: failed to parse %s: %v (using defaults)\n", path, err)
+	}
 }
