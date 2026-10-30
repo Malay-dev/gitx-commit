@@ -615,3 +615,168 @@ func TestMigrationCreatesSchemaVersion(t *testing.T) {
 		t.Errorf("expected schema version %d, got %d", schemaVersion, version)
 	}
 }
+
+func TestMigrationIdempotent(t *testing.T) {
+	// Open same DB twice — migrations should not re-run
+	dbPath := filepath.Join(t.TempDir(), "commits.db")
+	j1, _ := Open(dbPath)
+	j1.LogCommit(sampleCommit("m1"))
+	j1.Close()
+
+	j2, err := Open(dbPath)
+	if err != nil {
+		t.Fatalf("second Open should not fail: %v", err)
+	}
+	defer j2.Close()
+
+	count, _ := j2.Count()
+	if count != 1 {
+		t.Errorf("data should survive re-open, got count=%d", count)
+	}
+
+	var version int
+	j2.db.QueryRow("SELECT version FROM schema_version").Scan(&version)
+	if version != schemaVersion {
+		t.Errorf("schema version should be %d, got %d", schemaVersion, version)
+	}
+}
+
+func TestOpenInvalidPath(t *testing.T) {
+	// Try opening in a read-only location (may vary by OS)
+	_, err := Open("/dev/null/impossible/path/db.sqlite")
+	if err == nil {
+		t.Error("Open with invalid path should fail")
+	}
+}
+
+func TestPurgeRepoReturnsCount(t *testing.T) {
+	j := setupJournal(t)
+
+	for i := 0; i < 5; i++ {
+		r := sampleCommit(fmt.Sprintf("purge-%d", i))
+		r.RepoName = "to-purge"
+		j.LogCommit(r)
+	}
+
+	deleted, err := j.PurgeRepo("to-purge")
+	if err != nil {
+		t.Fatalf("PurgeRepo failed: %v", err)
+	}
+	if deleted != 5 {
+		t.Errorf("expected 5 deleted, got %d", deleted)
+	}
+}
+
+func TestLogCommitErrorHandling(t *testing.T) {
+	j := setupJournal(t)
+
+	// Valid commit should succeed
+	err := j.LogCommit(sampleCommit("valid"))
+	if err != nil {
+		t.Fatalf("valid commit should succeed: %v", err)
+	}
+}
+
+func TestCountByModeEmpty(t *testing.T) {
+	j := setupJournal(t)
+	manual, assisted, err := j.CountByMode()
+	if err != nil {
+		t.Fatalf("CountByMode on empty failed: %v", err)
+	}
+	if manual != 0 || assisted != 0 {
+		t.Errorf("empty journal should have 0/0, got %d/%d", manual, assisted)
+	}
+}
+
+func TestAllCommitsOrdered(t *testing.T) {
+	j := setupJournal(t)
+
+	for i := 0; i < 3; i++ {
+		r := sampleCommit(fmt.Sprintf("order-%d", i))
+		r.CommittedAt = time.Now().Add(time.Duration(i) * time.Hour)
+		r.Message = fmt.Sprintf("commit %d", i)
+		j.LogCommit(r)
+	}
+
+	records, _ := j.AllCommits()
+	if len(records) != 3 {
+		t.Fatalf("expected 3, got %d", len(records))
+	}
+	// Should be newest first
+	if records[0].Message != "commit 2" {
+		t.Errorf("should be newest first, got %s", records[0].Message)
+	}
+}
+
+func TestQueryFilteredByModel(t *testing.T) {
+	j := setupJournal(t)
+
+	r1 := sampleCommit("model-1")
+	r1.AIModel = "opus"
+	j.LogCommit(r1)
+
+	r2 := sampleCommit("model-2")
+	r2.AIModel = "gemini"
+	j.LogCommit(r2)
+
+	records, _ := j.QueryFiltered(QueryFilter{Model: "opus", Limit: 10})
+	if len(records) != 1 {
+		t.Errorf("expected 1 matching opus, got %d", len(records))
+	}
+}
+
+func TestQueryFilteredByUntil(t *testing.T) {
+	j := setupJournal(t)
+
+	old := sampleCommit("old-until")
+	old.CommittedAt = time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC)
+	j.LogCommit(old)
+
+	new := sampleCommit("new-until")
+	new.CommittedAt = time.Date(2026, 12, 1, 0, 0, 0, 0, time.UTC)
+	j.LogCommit(new)
+
+	records, _ := j.QueryFiltered(QueryFilter{Until: "2026-01-01T00:00:00Z", Limit: 10})
+	if len(records) != 1 {
+		t.Errorf("expected 1 before 2026, got %d", len(records))
+	}
+}
+
+func TestCountByToolEmpty(t *testing.T) {
+	j := setupJournal(t)
+	stats, err := j.CountByTool()
+	if err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+	if len(stats) != 0 {
+		t.Errorf("expected 0 on empty, got %d", len(stats))
+	}
+}
+
+func TestCountByModelEmpty(t *testing.T) {
+	j := setupJournal(t)
+	stats, err := j.CountByModel()
+	if err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+	if len(stats) != 0 {
+		t.Errorf("expected 0 on empty, got %d", len(stats))
+	}
+}
+
+func TestBackupCreatesTimestampedFile(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "commits.db")
+	j, _ := Open(dbPath)
+	j.LogCommit(sampleCommit("bak-ts"))
+
+	path1, _ := j.Backup()
+	time.Sleep(time.Second)
+	path2, _ := j.Backup()
+
+	j.Close()
+
+	// Two backups should have different names
+	if path1 == path2 {
+		t.Error("backups should have different timestamps")
+	}
+}

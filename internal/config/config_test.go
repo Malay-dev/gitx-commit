@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -229,5 +230,51 @@ func TestLoadRepoOverridesGlobal(t *testing.T) {
 	loaded, _ := Load()
 	if loaded.Template.Format != "custom" {
 		t.Errorf("repo config should override global, got '%s'", loaded.Template.Format)
+	}
+}
+
+func TestSaveLocal(t *testing.T) {
+	origDir, _ := os.Getwd()
+	tmpDir := t.TempDir()
+	os.Chdir(tmpDir)
+	defer os.Chdir(origDir)
+
+	cfg := DefaultConfig()
+	cfg.AI.OverrideTool = "Kiro"
+
+	err := SaveLocal(cfg)
+	if err != nil {
+		t.Fatalf("SaveLocal() failed: %v", err)
+	}
+
+	data, err := os.ReadFile(".gitx-commit.toml")
+	if err != nil {
+		t.Fatal("repo config not created")
+	}
+	if !bytes.Contains(data, []byte("Kiro")) {
+		t.Error("saved config should contain override_tool")
+	}
+}
+
+func TestLoadFromFileMalformed(t *testing.T) {
+	tmpDir := t.TempDir()
+	badFile := filepath.Join(tmpDir, "bad.toml")
+	os.WriteFile(badFile, []byte("[broken\nthis is not valid toml!!!"), 0644)
+
+	cfg := DefaultConfig()
+	loadFromFile(badFile, cfg)
+
+	// Should still have defaults — malformed file doesn't crash
+	if cfg.Template.Format != "conventional" {
+		t.Error("malformed config should fall back to defaults")
+	}
+}
+
+func TestLoadFromFileNonexistent(t *testing.T) {
+	cfg := DefaultConfig()
+	loadFromFile("/nonexistent/path/config.toml", cfg)
+
+	if cfg.Template.Format != "conventional" {
+		t.Error("missing file should keep defaults")
 	}
 }

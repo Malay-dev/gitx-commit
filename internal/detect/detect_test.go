@@ -272,3 +272,94 @@ func TestDetectOverrideTakesPrecedenceOverEverything(t *testing.T) {
 		t.Errorf("override confidence should be 1.0, got %.2f", result.Confidence)
 	}
 }
+
+// --- DetectOptions tests ---
+
+func TestDetectWithConfigOverrideTool(t *testing.T) {
+	clearAllToolEnvVars(t)
+	repoPath := t.TempDir()
+
+	opts := &DetectOptions{
+		OverrideTool:  "CustomTool",
+		OverrideModel: "custom-model-v1",
+	}
+
+	result := Detect(repoPath, opts)
+	if result == nil {
+		t.Fatal("expected detection with config override")
+	}
+	if result.Tool != "CustomTool" {
+		t.Errorf("expected 'CustomTool', got '%s'", result.Tool)
+	}
+	if result.Model != "custom-model-v1" {
+		t.Errorf("expected 'custom-model-v1', got '%s'", result.Model)
+	}
+	if result.Confidence != 1.0 {
+		t.Errorf("config override should have confidence 1.0, got %.2f", result.Confidence)
+	}
+	if result.Method != "override" {
+		t.Errorf("expected method 'override', got '%s'", result.Method)
+	}
+}
+
+func TestDetectEnvOverrideBbeatsConfigOverride(t *testing.T) {
+	clearAllToolEnvVars(t)
+	repoPath := t.TempDir()
+
+	// Env override set
+	t.Setenv("GITX_AI_TOOL", "EnvTool")
+	t.Setenv("GITX_AI_MODEL", "env-model")
+
+	// Config override also set
+	opts := &DetectOptions{
+		OverrideTool:  "ConfigTool",
+		OverrideModel: "config-model",
+	}
+
+	result := Detect(repoPath, opts)
+	if result == nil {
+		t.Fatal("expected detection")
+	}
+	// Env should win over config
+	if result.Tool != "EnvTool" {
+		t.Errorf("env should beat config override, got '%s'", result.Tool)
+	}
+	if result.Model != "env-model" {
+		t.Errorf("env model should win, got '%s'", result.Model)
+	}
+}
+
+func TestDetectConfigOverrideToolWithEnvModel(t *testing.T) {
+	clearAllToolEnvVars(t)
+	repoPath := t.TempDir()
+
+	// Only GITX_AI_MODEL env set, tool comes from config
+	t.Setenv("GITX_AI_MODEL", "env-model")
+
+	opts := &DetectOptions{
+		OverrideTool: "ConfigTool",
+	}
+
+	result := Detect(repoPath, opts)
+	if result == nil {
+		t.Fatal("expected detection")
+	}
+	if result.Tool != "ConfigTool" {
+		t.Errorf("expected 'ConfigTool', got '%s'", result.Tool)
+	}
+	if result.Model != "env-model" {
+		t.Errorf("env model should be picked up, got '%s'", result.Model)
+	}
+}
+
+func TestDetectNilOpts(t *testing.T) {
+	clearAllToolEnvVars(t)
+	repoPath := t.TempDir()
+
+	// nil opts should work fine — just auto-detection
+	result := Detect(repoPath, nil)
+	// May or may not detect something from home files
+	if result != nil {
+		t.Logf("detected %s via %s", result.Tool, result.Method)
+	}
+}
