@@ -83,9 +83,13 @@ func TestEnableInGitRepo(t *testing.T) {
 		t.Fatalf("enableGitXCommit() failed: %v", err)
 	}
 
-	// Verify hooks were installed
-	if !hook.IsInstalled(repoPath) {
-		t.Error("hooks should be installed after enable")
+	// Verify config-based hooks were installed
+	if !hook.IsConfigInstalled(repoPath, false) {
+		t.Error("config hooks should be installed after enable")
+	}
+	// Legacy hooks should NOT be written
+	if hook.IsInstalled(repoPath) {
+		t.Error("legacy hooks should not be written by new enable")
 	}
 }
 
@@ -113,6 +117,10 @@ func TestEnableTwice(t *testing.T) {
 	if err := enableGitXCommit(); err != nil {
 		t.Fatalf("second enable should be idempotent, got: %v", err)
 	}
+
+	if !hook.IsConfigInstalled(repoPath, false) {
+		t.Error("config hooks should be installed after double enable")
+	}
 }
 
 // --- Disable tests ---
@@ -131,9 +139,9 @@ func TestDisableInGitRepo(t *testing.T) {
 		t.Fatalf("disableGitXCommit() failed: %v", err)
 	}
 
-	// Verify hooks were removed
-	if hook.IsInstalled(repoPath) {
-		t.Error("hooks should be removed after disable")
+	// Verify config hooks were removed
+	if hook.IsConfigInstalled(repoPath, false) {
+		t.Error("config hooks should be removed after disable")
 	}
 }
 
@@ -199,13 +207,13 @@ func TestStatusShowsHooksInstalled(t *testing.T) {
 		t.Error("status should show hooks not installed before enable")
 	}
 
-	// After enable
+	// After enable — now uses config-based hooks
 	enableGitXCommit()
 	output = captureOutput(t, func() {
 		showStatus()
 	})
-	if !bytes.Contains([]byte(output), []byte("installed")) || bytes.Contains([]byte(output), []byte("not installed")) {
-		t.Error("status should show hooks installed after enable")
+	if !bytes.Contains([]byte(output), []byte("config-based")) {
+		t.Error("status should show 'config-based' after enable")
 	}
 }
 
@@ -257,6 +265,55 @@ func TestSetVersionInfo(t *testing.T) {
 
 // --- Edge case: enable then disable then status ---
 
+// TestEnableMigratesLegacyHooks verifies that running enable on a repo
+// with v0.1 legacy hooks migrates them to config-based hooks.
+func TestEnableMigratesLegacyHooks(t *testing.T) {
+	repoPath := setupGitRepo(t)
+	runCmdInDir(t, repoPath)
+
+	// Simulate v0.1: install legacy hooks directly
+	if err := hook.Install(repoPath); err != nil {
+		t.Fatalf("legacy Install failed: %v", err)
+	}
+	if !hook.IsInstalled(repoPath) {
+		t.Fatal("legacy hooks should be present")
+	}
+
+	// Run enable — should migrate
+	if err := enableGitXCommit(); err != nil {
+		t.Fatalf("enable failed: %v", err)
+	}
+
+	// Config hooks installed, legacy hooks cleaned up
+	if !hook.IsConfigInstalled(repoPath, false) {
+		t.Error("config hooks should be installed after migration")
+	}
+	if hook.IsInstalled(repoPath) {
+		t.Error("legacy hooks should be removed after migration")
+	}
+}
+
+// TestEnableForceReinstalls verifies that --force re-installs cleanly.
+func TestEnableForceReinstalls(t *testing.T) {
+	repoPath := setupGitRepo(t)
+	runCmdInDir(t, repoPath)
+
+	// Enable
+	if err := enableGitXCommit(); err != nil {
+		t.Fatalf("first enable failed: %v", err)
+	}
+
+	// Force re-enable
+	enableForce = true
+	defer func() { enableForce = false }()
+	if err := enableGitXCommit(); err != nil {
+		t.Fatalf("force enable failed: %v", err)
+	}
+	if !hook.IsConfigInstalled(repoPath, false) {
+		t.Error("config hooks should be installed after force")
+	}
+}
+
 func TestFullLifecycle(t *testing.T) {
 	repoPath := setupGitRepo(t)
 	runCmdInDir(t, repoPath)
@@ -265,8 +322,8 @@ func TestFullLifecycle(t *testing.T) {
 	if err := enableGitXCommit(); err != nil {
 		t.Fatalf("enable failed: %v", err)
 	}
-	if !hook.IsInstalled(repoPath) {
-		t.Fatal("hooks should be installed")
+	if !hook.IsConfigInstalled(repoPath, false) {
+		t.Fatal("config hooks should be installed")
 	}
 
 	// Status should show installed
@@ -279,8 +336,8 @@ func TestFullLifecycle(t *testing.T) {
 	if err := disableGitXCommit(); err != nil {
 		t.Fatalf("disable failed: %v", err)
 	}
-	if hook.IsInstalled(repoPath) {
-		t.Fatal("hooks should be removed")
+	if hook.IsConfigInstalled(repoPath, false) {
+		t.Fatal("config hooks should be removed")
 	}
 
 	// Status should show not installed
@@ -293,8 +350,8 @@ func TestFullLifecycle(t *testing.T) {
 	if err := enableGitXCommit(); err != nil {
 		t.Fatalf("re-enable failed: %v", err)
 	}
-	if !hook.IsInstalled(repoPath) {
-		t.Fatal("hooks should be installed after re-enable")
+	if !hook.IsConfigInstalled(repoPath, false) {
+		t.Fatal("config hooks should be installed after re-enable")
 	}
 }
 

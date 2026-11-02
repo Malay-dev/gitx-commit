@@ -37,10 +37,19 @@ func showStatus() error {
 	fmt.Println()
 
 	// Hooks
-	if repoPath != "" && hook.IsInstalled(repoPath) {
-		ui.Field("Hooks", "installed")
+	if repoPath != "" {
+		switch {
+		case hook.IsConfigInstalled(repoPath, false):
+			ui.Field("Hooks", "installed (config-based)")
+		case hook.IsConfigInstalled(repoPath, true):
+			ui.Field("Hooks", "installed (global config)")
+		case hook.IsInstalled(repoPath):
+			ui.Field("Hooks", "installed (legacy — run 'enable' to upgrade)")
+		default:
+			ui.Field("Hooks", "not installed")
+		}
 	} else {
-		ui.Field("Hooks", "not installed")
+		ui.Field("Hooks", "n/a (not in a git repo)")
 	}
 
 	// Config

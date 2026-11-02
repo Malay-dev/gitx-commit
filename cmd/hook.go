@@ -83,6 +83,12 @@ func runPrepareCommitMsg(msgFile, source string) error {
 		return nil
 	}
 
+	// Skip during rebase, cherry-pick, or revert — these replay existing
+	// commits and would get false AI attribution from whatever tool is active.
+	if isReplayCommit() {
+		return nil
+	}
+
 	// Read the commit message
 	msgBytes, err := os.ReadFile(msgFile)
 	if err != nil {
@@ -156,13 +162,18 @@ func runPostCommit() error {
 	}
 
 	record.CommitMode = "Manual"
+
+	// Skip AI attribution during replay (rebase, cherry-pick, revert) —
+	// these replay existing commits and would get false attribution.
 	if modeOverride := os.Getenv("GITX_COMMIT_MODE"); modeOverride != "" {
 		record.CommitMode = modeOverride
-	} else if result := detect.Detect(repoPath, opts); result != nil && result.Confidence >= cfg.AI.ConfidenceThreshold {
-		record.AITool = result.Tool
-		record.AIModel = result.Model
-		record.Confidence = result.Confidence
-		record.CommitMode = "AI Assisted"
+	} else if !isReplayCommit() {
+		if result := detect.Detect(repoPath, opts); result != nil && result.Confidence >= cfg.AI.ConfidenceThreshold {
+			record.AITool = result.Tool
+			record.AIModel = result.Model
+			record.Confidence = result.Confidence
+			record.CommitMode = "AI Assisted"
+		}
 	}
 
 	if err := j.LogCommit(record); err != nil {
@@ -213,6 +224,32 @@ func buildCommitRecord() (journal.CommitRecord, error) {
 	}
 
 	return record, nil
+}
+
+// isReplayCommit checks whether the current commit is being replayed
+// (rebase, cherry-pick, or revert). During these operations, the hooks
+// fire for each replayed commit, but the code isn't being newly written
+// with AI — it's being mechanically replayed. Attributing AI tools here
+// would be false provenance.
+func isReplayCommit() bool {
+	out, err := exec.Command("git", "rev-parse", "--git-dir").Output()
+	if err != nil {
+		return false
+	}
+	gitDir := strings.TrimSpace(string(out))
+
+	markers := []string{
+		"rebase-merge",     // interactive rebase
+		"rebase-apply",     // git am / non-interactive rebase
+		"CHERRY_PICK_HEAD", // cherry-pick in progress
+		"REVERT_HEAD",      // revert in progress
+	}
+	for _, marker := range markers {
+		if _, err := os.Stat(filepath.Join(gitDir, marker)); err == nil {
+			return true
+		}
+	}
+	return false
 }
 
 // parseShortStat parses "3 files changed, 50 insertions(+), 10 deletions(-)"
